@@ -146,6 +146,8 @@ const STYLES = {
   palm:    { count:0.4, spread:"sphere", speed:[2.6,4.0], decay:[0.004,0.009], gf:1.4,  drag:0.99,  big:0.55, flick:0.15, warm:true, snd:{lp:1000,dur:0.75,thump:70} },
   crackle: { count:1.1, spread:"sphere", speed:[1.6,3.2], decay:[0.012,0.03], gf:1.0,  drag:0.96,  big:0.05, flick:0.95, strobe:true, snd:{lp:1300,dur:0.45,thump:84,crackle:true} },
   heart:   { count:1.0, spread:"heart",  speed:[2.6,3.2], decay:[0.005,0.011], gf:1.0,  drag:0.99,  big:0.05, flick:0.2,  hue:342, snd:{lp:1300,dur:0.5,thump:78} },
+  smile:   { count:1.2, spread:"smile",  speed:[3.0,3.6], decay:[0.004,0.009], gf:0.8,  drag:0.99,  big:0.05, flick:0.15, snd:{lp:1300,dur:0.5,thump:78} },
+  flower:  { count:1.3, spread:"flower", speed:[2.8,3.4], decay:[0.004,0.009], gf:0.85, drag:0.99,  big:0.05, flick:0.15, snd:{lp:1200,dur:0.55,thump:74} },
 };
 const STYLE_NAMES = Object.keys(STYLES);
 
@@ -226,7 +228,7 @@ function explode(x, y, hue, styleName){
   const baseSpeed = rnd(st.speed[0], st.speed[1]);
   for (let i=0;i<n;i++){
     if (sparks.length >= MAX_SPARKS) sparks.shift();
-    let vx, vy;
+    let vx, vy, forceHue=null;
     if (st.spread === "ring"){
       const a=(i/n)*TWO_PI, sp=baseSpeed*(0.95+rnd(0,0.1));
       vx=Math.cos(a)*sp; vy=Math.sin(a)*sp;
@@ -235,12 +237,30 @@ function explode(x, y, hue, styleName){
       const hx=16*Math.pow(Math.sin(tt),3);
       const hy=13*Math.cos(tt)-5*Math.cos(2*tt)-2*Math.cos(3*tt)-Math.cos(4*tt);
       vx=hx*sp; vy=-hy*sp;               // flip so the heart sits upright
+    } else if (st.spread === "smile"){
+      // pixels laid out as a face that expands outward keeping its shape
+      const sc=baseSpeed*0.95, f=i/n; let ox, oy;
+      if (f < 0.5){ const a=(f/0.5)*TWO_PI; ox=Math.cos(a); oy=Math.sin(a); }        // face ring
+      else if (f < 0.6){ ox=-0.38+rnd(-0.1,0.1); oy=-0.34+rnd(-0.1,0.1); }            // left eye
+      else if (f < 0.7){ ox= 0.38+rnd(-0.1,0.1); oy=-0.34+rnd(-0.1,0.1); }            // right eye
+      else { const phi=Math.PI*0.18 + ((f-0.7)/0.3)*Math.PI*0.64; ox=0.52*Math.cos(phi); oy=-0.04+0.52*Math.sin(phi); } // smile arc
+      vx=ox*sc; vy=oy*sc; forceHue=48;
+    } else if (st.spread === "flower"){
+      if (i/n > 0.86){                   // bright center cluster
+        const a=rnd(0,TWO_PI), sp=baseSpeed*0.28*Math.sqrt(rnd(0,1));
+        vx=Math.cos(a)*sp; vy=Math.sin(a)*sp; forceHue=52;
+      } else {                           // petals via a 6-lobe modulated circle
+        const tt=(i/n)*TWO_PI, rr=0.5+0.5*Math.cos(6*tt);
+        const sp=baseSpeed*(0.28+0.95*rr)*(0.9+rnd(0,0.2));
+        vx=Math.cos(tt)*sp; vy=Math.sin(tt)*sp; forceHue=330;
+      }
     } else {
       const a=rnd(0,TWO_PI), sp=baseSpeed*Math.sqrt(rnd(0.04,1));
       vx=Math.cos(a)*sp; vy=Math.sin(a)*sp;
     }
     let h;
     if (set.rainbow)        h=(hue + i/n*360)%360;
+    else if (forceHue!=null)h=forceHue + rnd(-8,8);
     else if (st.hue!=null)  h=st.hue + rnd(-12,12);
     else if (st.warm)       h=38 + rnd(-12,20);
     else                    h=hue + rnd(-14,14);
