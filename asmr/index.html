@@ -32,20 +32,32 @@
     min-height:0;
   }
   .pad{
-    border:1.5px solid rgba(255,255,255,.5);border-radius:18px;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
-    cursor:pointer;position:relative;overflow:hidden;
-    transition:transform .08s ease, background .15s ease;
-    background:rgba(255,255,255,.04);
+    --c:#9fd0ff;
+    border:none;border-radius:26px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    cursor:pointer;position:relative;overflow:hidden;color:#15233f;
+    background:
+      radial-gradient(130% 110% at 50% 6%, color-mix(in srgb, var(--c) 92%, white), color-mix(in srgb, var(--c) 55%, white) 72%, color-mix(in srgb, var(--c) 60%, #6f86c0));
+    box-shadow:
+      0 14px 30px rgba(4,10,40,.30),
+      0 3px 8px rgba(4,10,40,.20),
+      inset 0 2px 0 rgba(255,255,255,.85),
+      inset 0 -10px 22px color-mix(in srgb, var(--c) 50%, transparent);
+    transition:transform .12s cubic-bezier(.3,1,.5,1), box-shadow .16s ease;
   }
-  .pad:hover{background:rgba(255,255,255,.09)}
-  .pad.hit{animation:squish .35s cubic-bezier(.3,1.4,.5,1)}
-  @keyframes squish{0%{transform:scale(1)}30%{transform:scale(.9,.86)}60%{transform:scale(1.03,1.05)}100%{transform:scale(1)}}
-  .pad svg{width:clamp(40px,7vw,72px);height:clamp(40px,7vw,72px)}
-  .pad b{font-size:13px;font-weight:600;letter-spacing:.04em;opacity:.85}
-  .pad .glow{position:absolute;inset:0;background:radial-gradient(circle at 50% 45%,rgba(255,255,255,.35),transparent 60%);opacity:0;pointer-events:none}
-  .pad.hit .glow{animation:flash .4s ease}
-  @keyframes flash{0%{opacity:.7}100%{opacity:0}}
+  .pad:hover{
+    transform:translateY(-4px);
+    box-shadow:0 22px 40px rgba(4,10,40,.34),0 4px 10px rgba(4,10,40,.22),inset 0 2px 0 rgba(255,255,255,.9),inset 0 -10px 22px color-mix(in srgb, var(--c) 50%, transparent);
+  }
+  .pad:active{transform:translateY(0) scale(.97)}
+  .pad.hit{animation:squish .4s cubic-bezier(.3,1.5,.5,1)}
+  @keyframes squish{0%{transform:scale(1)}26%{transform:scale(.9,.84)}58%{transform:scale(1.04,1.06)}100%{transform:scale(1)}}
+  .pad svg{width:clamp(42px,7vw,68px);height:clamp(42px,7vw,68px);filter:drop-shadow(0 2px 3px rgba(4,10,40,.18))}
+  .pad b{font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:lowercase}
+  .pad .key{position:absolute;top:12px;right:14px;font-size:11px;font-weight:700;opacity:.4}
+  .pad .glow{position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.7),transparent 62%);opacity:0;pointer-events:none}
+  .pad.hit .glow{animation:flash .45s ease}
+  @keyframes flash{0%{opacity:.9}100%{opacity:0}}
   @media (max-width:760px){ main{grid-template-columns:repeat(2,1fr)} }
   @media (prefers-reduced-motion: reduce){ .pad.hit{animation:none} }
 </style>
@@ -106,30 +118,31 @@ const SOUNDS={
     o.connect(g).connect(master); o.start(t); o.stop(t+0.5); },
 };
 
+const INK="#15233f";
 const PADS=[
-  {k:"squish",label:"squish",c:"#ff8fcf"},
-  {k:"keys",  label:"keys",  c:"#ffffff"},
-  {k:"pop",   label:"pop",   c:"#8fe3ff"},
-  {k:"drip",  label:"drip",  c:"#9fd0ff"},
-  {k:"wood",  label:"wood",  c:"#ffce8f"},
-  {k:"chime", label:"chime", c:"#d6b8ff"},
-  {k:"crunch",label:"crunch",c:"#fff2a8"},
-  {k:"boing", label:"boing", c:"#a8ffc0"},
+  {k:"squish",label:"squish",c:"#ff7ec0"},
+  {k:"keys",  label:"keys",  c:"#cbd6ec"},
+  {k:"pop",   label:"pop",   c:"#62d2ff"},
+  {k:"drip",  label:"drip",  c:"#7fb0ff"},
+  {k:"wood",  label:"wood",  c:"#ffb866"},
+  {k:"chime", label:"chime", c:"#c2a0ff"},
+  {k:"crunch",label:"crunch",c:"#ffe06b"},
+  {k:"boing", label:"boing", c:"#7fe6ac"},
 ];
 
 const wrap=document.getElementById("pads");
 PADS.forEach((p,i)=>{
   const el=document.createElement("button");
   el.className="pad"; el.setAttribute("aria-label",p.label);
-  el.innerHTML=`<span class="glow"></span>${iconFor(p)}<b>${p.label}</b>`;
+  el.style.setProperty("--c",p.c);
+  el.innerHTML=`<span class="glow"></span><span class="key">${i+1}</span>${iconFor(p)}<b>${p.label}</b>`;
   const fire=()=>{ SOUNDS[p.k](); el.classList.remove("hit"); void el.offsetWidth; el.classList.add("hit"); };
   el.addEventListener("pointerdown",fire);
-  el.dataset.key=String((i+1)%10);
   wrap.appendChild(el);
 });
 
 function iconFor(p){
-  const c=p.c;
+  const c=INK;
   const map={
     squish:`<svg viewBox="0 0 48 48"><ellipse cx="24" cy="26" rx="17" ry="13" fill="${c}"/></svg>`,
     keys:`<svg viewBox="0 0 48 48"><rect x="8" y="14" width="32" height="20" rx="4" fill="none" stroke="${c}" stroke-width="3"/><rect x="14" y="20" width="6" height="6" fill="${c}"/><rect x="28" y="20" width="6" height="6" fill="${c}"/></svg>`,

@@ -61,6 +61,7 @@
   <label><span>segments</span><input type="range" id="rSeg" min="3" max="16" value="8"></label>
   <label><span>pixel</span><input type="range" id="rPix" min="6" max="40" value="16"></label>
   <div class="toggles">
+    <button id="tAuto">auto</button>
     <button id="tSpin">spin</button>
     <button id="tFixed">single color</button>
   </div>
@@ -76,16 +77,23 @@ let W=0,H=0;
 function resize(){ W=innerWidth;H=innerHeight;canvas.width=W*DPR;canvas.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);clear(); }
 addEventListener("resize",resize);
 
-const set={ seg:8, pix:16, spin:false, fixed:false };
+const set={ seg:8, pix:16, spin:false, fixed:false, auto:false };
 let spinAng=0;
 
-function clear(){ ctx.fillStyle="#060608"; ctx.fillRect(0,0,W,H); }
+function clear(){ ctx.shadowBlur=0; ctx.fillStyle="#060608"; ctx.fillRect(0,0,W,H); }
 
 function pixelAt(px,py,hue){
   const g=set.pix;
   const gx=Math.floor(px/g)*g, gy=Math.floor(py/g)*g;
-  ctx.fillStyle=`hsl(${hue},85%,${set.fixed?58:60}%)`;
+  const col=`hsl(${hue},90%,${set.fixed?58:62}%)`;
+  // glow halo makes the pixels shine
+  ctx.shadowColor=col; ctx.shadowBlur=g*1.1;
+  ctx.fillStyle=col;
   ctx.fillRect(gx,gy,g,g);
+  // bright hot core for sparkle
+  ctx.shadowBlur=0;
+  ctx.fillStyle=`hsla(${hue},95%,88%,.55)`;
+  ctx.fillRect(gx+g*0.3, gy+g*0.3, g*0.4, g*0.4);
 }
 function stamp(x,y,t){
   const cx=W/2, cy=H/2;
@@ -102,26 +110,42 @@ function stamp(x,y,t){
   }
 }
 
+function stroke(ax,ay,bx,by,t){
+  const dx=bx-ax, dy=by-ay, steps=Math.max(1,Math.hypot(dx,dy)/(set.pix*0.6));
+  for(let i=1;i<=steps;i++) stamp(ax+dx*i/steps, ay+dy*i/steps, t);
+}
 let drawing=false, last=null;
 function paint(x,y){
   const t=performance.now();
-  if(last){ // interpolate so fast strokes stay connected
-    const dx=x-last.x, dy=y-last.y, steps=Math.max(1,Math.hypot(dx,dy)/(set.pix*0.6));
-    for(let i=1;i<=steps;i++) stamp(last.x+dx*i/steps, last.y+dy*i/steps, t);
-  } else stamp(x,y,t);
+  if(last) stroke(last.x,last.y,x,y,t); else stamp(x,y,t);
   last={x,y};
 }
 canvas.addEventListener("pointerdown",e=>{drawing=true;last=null;paint(e.clientX,e.clientY);});
 canvas.addEventListener("pointermove",e=>{if(drawing)paint(e.clientX,e.clientY);});
 addEventListener("pointerup",()=>{drawing=false;last=null;});
 
-// optional slow spin of the symmetry axis
-function loop(){ if(set.spin&&!reduceMotion){ spinAng+=0.004; } requestAnimationFrame(loop); }
+// auto mode: a virtual pen sweeps an evolving path, gentle fade keeps it glowing
+let autoLast=null;
+function autoPen(t){
+  const cx=W/2, cy=H/2, R=Math.min(W,H)*0.4;
+  const x=cx + Math.cos(t*0.00071)*R*0.62 + Math.cos(t*0.00123)*R*0.34;
+  const y=cy + Math.sin(t*0.00057)*R*0.62 + Math.sin(t*0.00111)*R*0.34;
+  if(autoLast) stroke(autoLast.x,autoLast.y,x,y,t); else stamp(x,y,t);
+  autoLast={x,y};
+}
+function fade(){ ctx.shadowBlur=0; ctx.fillStyle="rgba(6,6,8,0.045)"; ctx.fillRect(0,0,W,H); }
+
+function loop(t){
+  if(set.spin&&!reduceMotion){ spinAng+=0.004; }
+  if(set.auto&&!reduceMotion){ fade(); autoPen(t); } else autoLast=null;
+  requestAnimationFrame(loop);
+}
 
 const $=id=>document.getElementById(id);
 $("rSeg").addEventListener("input",e=>set.seg=+e.target.value);
 $("rPix").addEventListener("input",e=>set.pix=+e.target.value);
 function toggle(b,fn){const on=b.classList.toggle("on");fn(on);}
+$("tAuto").addEventListener("click",e=>toggle(e.currentTarget,v=>set.auto=v));
 $("tSpin").addEventListener("click",e=>toggle(e.currentTarget,v=>set.spin=v));
 $("tFixed").addEventListener("click",e=>toggle(e.currentTarget,v=>set.fixed=v));
 $("btnClear").addEventListener("click",clear);
