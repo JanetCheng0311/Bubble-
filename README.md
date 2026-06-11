@@ -1,22 +1,21 @@
-# Bubble Playground
+# Playground
 
-An interactive bubble toy that runs entirely in the browser. Blow, pop and style realistic soap bubbles with transparent, rainbow-shimmer surfaces and wobbly distorted edges.
+A collection of interactive creative-coding toys, hosted with GitHub Pages. The landing page is a minimal index in pure blue and white; each toy lives in its own folder.
 
-## Features
+**Live:** https://janetcheng0311.github.io/Bubble-/
 
-- **Pop bubbles** by tapping or clicking them, or sweep your finger/mouse across the screen to pop a whole trail. Each pop bursts into iridescent droplets with a soft pop sound (mutable).
-- **Blow bubbles** by tapping empty space.
-- **Customize panel**: size, rainbow shimmer, edge wobble, tint hue, transparency, and spawn rate. Five built-in presets (Classic, Sunset, Mint fizz, Galaxy, Crystal), plus **Save my style** to keep your own (stored in your browser; long-press a chip to delete).
-- **Background image + rope select**: upload any photo as the backdrop, then drag a rope loop around an area. New bubbles appear only inside the rope. Double-tap inside the rope to clear the selection.
-- **Clear** pops every bubble on screen in one cascade.
-- Works on phones and desktops (pointer + touch), honors `prefers-reduced-motion`.
+## Toys
 
-## Run it
+- **[Bubbles](bubbles/)**: realistic soap bubbles with iridescent rim film and organic wobble. Pop them by tap or swipe, style them with sliders and presets, upload a background photo and rope off where bubbles appear.
+- **[Flow](flow/)**: generative flow-field line art. Tap to grow a field from a point, tweak line count and swirl, save the result as a PNG.
 
-It is a single `index.html` with zero dependencies. Open the file directly, or serve the folder:
+## Adding a new toy
+
+1. Create a folder, e.g. `sparks/`, with its own `index.html` (self-contained, no dependencies).
+2. Add a link to it in the root `index.html` nav list.
+
+Everything is plain HTML/CSS/JS with zero build steps. To preview locally:
 
 ```bash
 python3 -m http.server 8000
 ```
-
-Hosted with GitHub Pages from this repository.
