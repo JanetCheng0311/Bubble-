@@ -373,6 +373,9 @@ function makeBubble(x, y, opts = {}){
     hue: s.hue,
     alpha: s.alpha,
     hueOffset: Math.random()*360,
+    // per-bubble interference fingerprint so no two films look alike
+    f1: Math.random()*TWO_PI, f2: Math.random()*TWO_PI,
+    f3: Math.random()*TWO_PI, f4: Math.random()*TWO_PI,
     born: performance.now(),
     lobes: 3 + (Math.random()*3|0),
   };
@@ -455,6 +458,60 @@ function bubblePath(b, t){
   ctx.closePath();
 }
 
+/* Pre-render the thin-film color layer for one bubble.
+   Smooth conic gradients (no segments) masked to the rim, with
+   patchy angular intensity, mimic real interference colors. */
+function makeFilm(b){
+  const r = b.r;
+  const size = Math.ceil(r*2) + 4;
+  b.filmSize = size;
+  const c = document.createElement("canvas");
+  const s = Math.min(2, DPR);
+  c.width = c.height = Math.ceil(size*s);
+  const g = c.getContext("2d");
+  if (!g.createConicGradient) return null; // very old browser: skip film
+  g.scale(s, s);
+  const cx = size/2;
+
+  // 1) continuous interference hues around the circumference (seamless loop)
+  const stops = 12;
+  const hues = [];
+  let h = b.hueOffset;
+  for (let i=0;i<stops;i++){ hues.push(h); h += 30 + 85*Math.sin(i*1.9 + b.f2); }
+  hues.push(hues[0]);
+  const grad = g.createConicGradient(b.f1, cx, cx);
+  hues.forEach((hh,i) => {
+    const lig = 58 + 10*Math.sin(i*2.4 + b.f3);
+    grad.addColorStop(i/stops, `hsl(${((hh%360)+360)%360} 90% ${i===stops? 58 + 10*Math.sin(b.f3) : lig}%)`);
+  });
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+
+  // 2) radial mask: color lives at the edge, faint bleed toward the middle
+  g.globalCompositeOperation = "destination-in";
+  const m = g.createRadialGradient(cx, cx, 0, cx, cx, r);
+  m.addColorStop(0,   "rgba(0,0,0,.03)");
+  m.addColorStop(.55, "rgba(0,0,0,.06)");
+  m.addColorStop(.78, "rgba(0,0,0,.16)");
+  m.addColorStop(.92, "rgba(0,0,0,.62)");
+  m.addColorStop(.985,"rgba(0,0,0,.95)");
+  m.addColorStop(1,   "rgba(0,0,0,.95)");
+  g.fillStyle = m;
+  g.beginPath(); g.arc(cx, cx, r, 0, TWO_PI); g.fill();
+
+  // 3) angular patchiness: some stretches of rim almost colorless (seamless loop)
+  const pSteps = 10;
+  const pa = [];
+  for (let i=0;i<pSteps;i++) pa.push(.30 + .70*Math.pow(.5 + .5*Math.sin(i*2.2 + b.f4), 2));
+  pa.push(pa[0]);
+  const pm = g.createConicGradient(b.f3, cx, cx);
+  pa.forEach((a,i) => pm.addColorStop(i/pSteps, `rgba(0,0,0,${a})`));
+  g.fillStyle = pm;
+  g.fillRect(0, 0, size, size);
+  g.globalCompositeOperation = "source-over";
+  return c;
+}
+
 function drawBubble(b, t){
   const grow = Math.min(1, (t - b.born)/350);
   const scale = reduceMotion ? 1 : 0.4 + 0.6*(1-Math.pow(1-grow,3));
@@ -476,32 +533,37 @@ function drawBubble(b, t){
   ctx.fillStyle = body;
   ctx.fill();
 
-  // iridescent rim band: rainbow patches hugging the edge, clear center
+  // soap-film interference: pre-rendered smooth conic-gradient sprite per bubble
   if (b.irid > 0.02){
     ctx.save();
     ctx.clip();
-    const spin = reduceMotion ? b.hueOffset : b.hueOffset + t*0.012;
-    const band = Math.max(3, r*0.16);     // thin film thickness
-    const rimR = r - band/2;
-    const segs = 72;
-    ctx.lineCap = "butt";
-    for (let i=0;i<segs;i++){
-      const a0 = (i/segs)*TWO_PI;
-      const a1 = a0 + TWO_PI/segs*1.06;   // tiny overlap to hide seams
-      // soap-film interference: hue swings around the circumference in broad patches
-      const hue = (spin + 200 + 160*Math.sin(a0*2 + b.wobblePhase) + 60*Math.sin(a0*5 - b.wobblePhase))%360;
-      const bright = 52 + 16*Math.sin(a0*3 + spin*0.05);
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, rimR, a0, a1);
-      ctx.strokeStyle = `hsla(${hue},95%,${bright}%,${.6*b.irid*b.alpha})`;
-      ctx.lineWidth = band;
-      ctx.stroke();
+    if (!b.film) b.film = makeFilm(b);
+    if (b.film){
+      ctx.globalAlpha = b.irid * b.alpha;
+      const rot = reduceMotion ? b.f1 : b.f1 + t*0.00012;
+      ctx.translate(b.x, b.y);
+      ctx.rotate(rot);
+      ctx.drawImage(b.film, -b.filmSize/2, -b.filmSize/2, b.filmSize, b.filmSize);
+      ctx.rotate(-rot);
+      ctx.translate(-b.x, -b.y);
+      ctx.globalAlpha = 1;
     }
-    // soften the band's inner boundary so it fades toward the clear center
-    const fade = ctx.createRadialGradient(b.x, b.y, Math.max(0, r - band*2.2), b.x, b.y, r - band*.6);
-    fade.addColorStop(0, `hsla(${b.hue},60%,96%,${.07*b.alpha})`);
-    fade.addColorStop(1, "hsla(0,0%,100%,0)");
-    ctx.fillStyle = fade;
+
+    // darker shading just inside the rim sells the curvature (photo look)
+    const shade = ctx.createRadialGradient(b.x, b.y, r*0.62, b.x, b.y, r);
+    shade.addColorStop(0, "hsla(220,40%,20%,0)");
+    shade.addColorStop(.82, `hsla(220,40%,22%,${.10*b.alpha})`);
+    shade.addColorStop(1, `hsla(220,45%,18%,${.22*b.alpha})`);
+    ctx.fillStyle = shade;
+    ctx.fillRect(b.x-r, b.y-r, r*2, r*2);
+
+    // faint sky reflection across the lower half, like the environment mirrored
+    const refl = ctx.createLinearGradient(b.x, b.y - r, b.x, b.y + r);
+    refl.addColorStop(0, "hsla(0,0%,100%,0)");
+    refl.addColorStop(.55, "hsla(0,0%,100%,0)");
+    refl.addColorStop(.8, `hsla(200,80%,85%,${.10*b.alpha})`);
+    refl.addColorStop(1, `hsla(200,85%,90%,${.20*b.alpha})`);
+    ctx.fillStyle = refl;
     ctx.fillRect(b.x-r, b.y-r, r*2, r*2);
     ctx.restore();
   }
@@ -516,14 +578,23 @@ function drawBubble(b, t){
   ctx.lineWidth = .6;
   ctx.stroke();
 
-  // specular highlights
+  // specular highlights: bright curved gleam following the upper-left rim
+  ctx.save();
+  bubblePath(b, t); ctx.clip();
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, r*0.86, Math.PI*1.05, Math.PI*1.45);
+  ctx.strokeStyle = `hsla(0,0%,100%,${.75*b.alpha})`;
+  ctx.lineWidth = r*0.09;
+  ctx.stroke();
+  ctx.restore();
   const hx = b.x - r*.38, hy = b.y - r*.42;
   const hl = ctx.createRadialGradient(hx, hy, 0, hx, hy, r*.45);
-  hl.addColorStop(0, `hsla(0,0%,100%,${.85*b.alpha})`);
-  hl.addColorStop(.35, `hsla(0,0%,100%,${.25*b.alpha})`);
+  hl.addColorStop(0, `hsla(0,0%,100%,${.9*b.alpha})`);
+  hl.addColorStop(.35, `hsla(0,0%,100%,${.30*b.alpha})`);
   hl.addColorStop(1, "hsla(0,0%,100%,0)");
   ctx.fillStyle = hl;
-  ctx.beginPath(); ctx.ellipse(hx, hy, r*.34, r*.2, -0.7, 0, TWO_PI); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(hx, hy, r*.30, r*.17, -0.7, 0, TWO_PI); ctx.fill();
 
   const hx2 = b.x + r*.3, hy2 = b.y + r*.45;
   const hl2 = ctx.createRadialGradient(hx2, hy2, 0, hx2, hy2, r*.3);
