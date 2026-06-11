@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="description" content="Generative flow-field line art. Regenerate, tweak, and save your own piece.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230033ff'/%3E%3Cpath d='M10 24c12 8 20-12 32-4s8 18 14 18' stroke='white' stroke-width='5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<title>Flow — Playground</title>
+<style>
+  :root{ --blue:#0033ff; --white:#fff; }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden}
+  body{
+    background:var(--blue);color:var(--white);
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    user-select:none;-webkit-user-select:none;
+    touch-action:none;
+  }
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  header{
+    position:fixed;top:0;left:0;right:0;z-index:10;
+    display:flex;align-items:center;gap:10px;
+    padding:14px 16px;pointer-events:none;
+  }
+  header a.home{
+    pointer-events:auto;text-decoration:none;color:var(--white);
+    font-weight:700;text-transform:uppercase;letter-spacing:.02em;
+    font-size:16px;border:2px solid var(--white);border-radius:999px;padding:7px 14px;
+    transition:background .15s ease,color .15s ease;
+  }
+  header a.home:hover{background:var(--white);color:var(--blue)}
+  .bar{display:flex;gap:8px;margin-left:auto;pointer-events:auto;flex-wrap:wrap;justify-content:flex-end}
+  button{
+    font:inherit;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--white);background:transparent;
+    border:2px solid var(--white);border-radius:999px;padding:8px 15px;cursor:pointer;
+    transition:background .15s ease,color .15s ease,transform .12s ease;
+  }
+  button:hover{background:var(--white);color:var(--blue)}
+  button:active{transform:translateY(1px) scale(.98)}
+
+  .ctl{
+    position:fixed;left:16px;bottom:16px;z-index:10;
+    display:flex;flex-direction:column;gap:8px;
+    font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  }
+  .ctl label{display:flex;align-items:center;gap:10px}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:150px;height:24px;background:transparent;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--white)}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--blue);border:2.5px solid var(--white);margin-top:-7px;
+  }
+  input[type=range]::-moz-range-track{height:2px;background:var(--white)}
+  input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--blue);border:2.5px solid var(--white)}
+
+  .hint{
+    position:fixed;right:16px;bottom:16px;z-index:10;
+    font-size:12px;font-weight:600;opacity:.85;max-width:26ch;text-align:right;line-height:1.5;
+  }
+  @media (max-width:640px){
+    .hint{display:none}
+    header{padding:10px}
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<header>
+  <a class="home" href="../">Playground</a>
+  <div class="bar">
+    <button id="btnNew">New field</button>
+    <button id="btnSave">Save PNG</button>
+  </div>
+</header>
+
+<div class="ctl">
+  <label>Lines <input type="range" id="rLines" min="200" max="3000" value="1200"></label>
+  <label>Swirl <input type="range" id="rSwirl" min="1" max="10" value="4"></label>
+</div>
+
+<p class="hint">Tap anywhere to grow a new field from that point.</p>
+
+<script>
+(() => {
+"use strict";
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const DPR = Math.min(devicePixelRatio || 1, 2);
+let W = 0, H = 0;
+
+function resize(){
+  W = innerWidth; H = innerHeight;
+  canvas.width = W*DPR; canvas.height = H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  restart();
+}
+addEventListener("resize", resize);
+
+/* simple seeded value noise for the vector field */
+let seed = 1;
+function rnd(){ seed = (seed*1664525 + 1013904223) % 4294967296; return seed/4294967296; }
+let grid, gw, gh, cell;
+function buildField(){
+  cell = 40;
+  gw = Math.ceil(W/cell)+2; gh = Math.ceil(H/cell)+2;
+  grid = new Float32Array(gw*gh);
+  for (let i=0;i<grid.length;i++) grid[i] = rnd()*Math.PI*2;
+  // smooth a few passes so neighbours agree (coherent flow)
+  for (let p=0;p<3;p++){
+    const g2 = grid.slice();
+    for (let y=1;y<gh-1;y++) for (let x=1;x<gw-1;x++){
+      const i = y*gw+x;
+      // average angles via vectors to avoid wrap issues
+      let vx=0, vy=0;
+      for (const j of [i, i-1, i+1, i-gw, i+gw]){ vx+=Math.cos(g2[j]); vy+=Math.sin(g2[j]); }
+      grid[i] = Math.atan2(vy, vx);
+    }
+  }
+}
+function angleAt(x, y, swirl){
+  // bilinear interpolation between the 4 surrounding cells (via vectors,
+  // so angle wrap-around blends correctly) keeps the curves smooth
+  const fx = Math.max(0, Math.min(gw-1.001, x/cell));
+  const fy = Math.max(0, Math.min(gh-1.001, y/cell));
+  const x0 = fx|0, y0 = fy|0, tx = fx-x0, ty = fy-y0;
+  const i = y0*gw + x0;
+  const a00 = grid[i], a10 = grid[i+1], a01 = grid[i+gw], a11 = grid[i+gw+1];
+  const vx = Math.cos(a00)*(1-tx)*(1-ty) + Math.cos(a10)*tx*(1-ty) + Math.cos(a01)*(1-tx)*ty + Math.cos(a11)*tx*ty;
+  const vy = Math.sin(a00)*(1-tx)*(1-ty) + Math.sin(a10)*tx*(1-ty) + Math.sin(a01)*(1-tx)*ty + Math.sin(a11)*tx*ty;
+  return Math.atan2(vy, vx)*swirl*0.5;
+}
+
+/* particles trace the field, drawn incrementally so it "grows" */
+let particles = [];
+let drawing = false;
+
+function makeParticles(n, origin){
+  particles = [];
+  for (let i=0;i<n;i++){
+    let x, y;
+    if (origin){
+      const a = rnd()*Math.PI*2, d = rnd()*Math.min(W,H)*0.45;
+      x = origin.x + Math.cos(a)*d; y = origin.y + Math.sin(a)*d;
+    } else { x = rnd()*W; y = rnd()*H; }
+    particles.push({ x, y, life: 40 + rnd()*160, w: .5 + rnd()*1.6, o: .25 + rnd()*.75 });
+  }
+}
+
+let swirl = 4;
+function step(){
+  if (!particles.length){ drawing = false; return; }
+  ctx.lineCap = "round";
+  const batch = reduceMotion ? particles.length : 6; // reduced motion: render instantly
+  for (let pass=0; pass<batch; pass++){
+    for (let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      const a = angleAt(p.x, p.y, swirl);
+      const nx = p.x + Math.cos(a)*2.2;
+      const ny = p.y + Math.sin(a)*2.2;
+      ctx.strokeStyle = `rgba(255,255,255,${p.o*0.5})`;
+      ctx.lineWidth = p.w;
+      ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(nx,ny); ctx.stroke();
+      p.x = nx; p.y = ny;
+      if (--p.life <= 0 || p.x<-20||p.x>W+20||p.y<-20||p.y>H+20) particles.splice(i,1);
+    }
+    if (!particles.length) break;
+  }
+  if (particles.length){ requestAnimationFrame(step); }
+  else drawing = false;
+}
+
+function restart(origin){
+  buildField();
+  ctx.fillStyle = "#0033ff";
+  ctx.fillRect(0,0,W,H);
+  swirl = +document.getElementById("rSwirl").value;
+  makeParticles(+document.getElementById("rLines").value, origin);
+  if (!drawing){ drawing = true; requestAnimationFrame(step); }
+}
+
+document.getElementById("btnNew").addEventListener("click", () => { seed = (Math.random()*1e9)|0; restart(); });
+document.getElementById("rLines").addEventListener("change", () => restart());
+document.getElementById("rSwirl").addEventListener("change", () => restart());
+canvas.addEventListener("pointerdown", e => { seed = (Math.random()*1e9)|0; restart({x:e.clientX, y:e.clientY}); });
+
+document.getElementById("btnSave").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.download = "flow-field.png";
+  a.href = canvas.toDataURL("image/png");
+  a.click();
+});
+
+seed = (Math.random()*1e9)|0;
+resize();
+})();
+</script>
+</body>
+</html>
