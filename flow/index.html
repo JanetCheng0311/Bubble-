@@ -78,7 +78,7 @@
 </header>
 
 <div class="ctl">
-  <label><span>lines</span><input type="range" id="rLines" min="30" max="400" value="160"></label>
+  <label><span>lines</span><input type="range" id="rLines" min="600" max="6000" value="2800"></label>
   <label><span>scale</span><input type="range" id="rScale" min="1" max="10" value="4"></label>
 </div>
 
@@ -131,98 +131,66 @@ function noise2(x, y){
   ); // roughly -1..1
 }
 
-/* ---------- flow ribbons: long non-touching curves of varied weight ----------
-   Fidenza-style composition: each ribbon follows the field, keeps a margin
-   from every other ribbon (occupancy grid), and the empty blue between
-   them is part of the picture. */
+/* ---------- wispy strands ----------
+   Thousands of 1px low-opacity threads. Each strand steers toward the
+   noise field with momentum, so it bends smoothly like hair instead of
+   jittering. Two moods per piece: a directional wind-swept sweep, or a
+   tangled nest of curls. Overlapping faint strokes build up the smoky,
+   fibrous texture. */
 let drawing = false;
 let noiseScale = 0.004;
-let queue = [];          // ribbons waiting to be drawn (animated growth)
-let occ, ow, oh;
-const OCC = 6;           // occupancy cell px
+let queue = [];
 
-function fieldAngle(x, y){
-  const n = noise2(x*noiseScale, y*noiseScale)
-          + 0.35*noise2(x*noiseScale*2.6 + 31.7, y*noiseScale*2.6 + 11.3);
-  return n * Math.PI * 2.4;
-}
+const angDiff = (t, h) => ((t - h + Math.PI*3) % (Math.PI*2)) - Math.PI;
 
-function occIndex(x, y){ return ((y/OCC)|0)*ow + ((x/OCC)|0); }
-function blocked(x, y, rad){
-  if (x<rad||y<rad||x>W-rad||y>H-rad) return true;
-  const r = Math.ceil(rad/OCC);
-  const cx = (x/OCC)|0, cy = (y/OCC)|0;
-  for (let j=-r;j<=r;j++) for (let i=-r;i<=r;i++){
-    const X = cx+i, Y = cy+j;
-    if (X<0||Y<0||X>=ow||Y>=oh) continue;
-    if (occ[Y*ow+X]) return true;
-  }
-  return false;
-}
-function occupy(x, y, rad){
-  const r = Math.ceil(rad/OCC);
-  const cx = (x/OCC)|0, cy = (y/OCC)|0;
-  for (let j=-r;j<=r;j++) for (let i=-r;i<=r;i++){
-    const X = cx+i, Y = cy+j;
-    if (X>=0&&Y>=0&&X<ow&&Y<oh) occ[Y*ow+X] = 1;
-  }
-}
-
-/* trace one ribbon: walk the field both ways from a seed, collecting points */
-function traceRibbon(seedPt, w){
-  const margin = w/2 + 7;
-  const pts = [];
-  for (const dir of [1, -1]){
-    let {x, y} = seedPt;
-    const run = [];
-    for (let s=0;s<600;s++){
-      if (blocked(x, y, margin)) break;
-      run.push({x, y});
-      const a = fieldAngle(x, y);
-      x += Math.cos(a)*3*dir;
-      y += Math.sin(a)*3*dir;
-    }
-    if (dir === 1) pts.push(...run);
-    else pts.unshift(...run.slice(1).reverse());
-  }
-  return pts;
-}
-
-function buildRibbons(count, origin){
+function buildStrands(count, origin){
   queue = [];
-  // weighted widths: many thin threads, a few broad ribbons
-  const widths = [2, 2, 3, 5, 5, 8, 13, 21, 34];
-  for (let i=0;i<count*14 && queue.length<count;i++){
-    let x, y;
-    if (origin && rnd() < .6){
-      const a = rnd()*Math.PI*2, d = (rnd()+rnd())/2 * Math.min(W,H)*0.5;
-      x = origin.x + Math.cos(a)*d; y = origin.y + Math.sin(a)*d;
-    } else { x = rnd()*W; y = rnd()*H; }
-    const w = widths[(rnd()*widths.length)|0];
-    if (blocked(x, y, w/2 + 7)) continue;
-    const pts = traceRibbon({x, y}, w);
-    const minLen = w*3 + 30;
-    if (pts.length*3 < minLen) continue;          // too short: discard
-    for (const p of pts) occupy(p.x, p.y, w/2 + 5);
-    queue.push({ pts, w, o: rnd() < .18 ? .45 : .95, drawn: 1 });
+  const tangle = rnd() < .45;                  // piece mood
+  const bias = rnd()*Math.PI*2;                // wind direction (sweep mode)
+  // seed cloud: around the tap, or a loose gaussian blob off-center
+  const cx = origin ? origin.x : W*(.25 + rnd()*.5);
+  const cy = origin ? origin.y : H*(.25 + rnd()*.5);
+  const spread = Math.min(W,H) * (tangle ? .38 : .5);
+
+  for (let i=0;i<count;i++){
+    const a0 = rnd()*Math.PI*2;
+    const d0 = (rnd()+rnd()+rnd())/3 * spread;
+    let x = cx + Math.cos(a0)*d0;
+    let y = cy + Math.sin(a0)*d0;
+    let heading = tangle ? rnd()*Math.PI*2 : bias + (rnd()-.5)*.9;
+    const steps = 140 + (rnd()*420|0);
+    const turn = tangle ? .22 : .09;           // steering strength
+    const pts = [{x,y}];
+    for (let s=0;s<steps;s++){
+      const n = noise2(x*noiseScale, y*noiseScale)
+              + .5*noise2(x*noiseScale*2.3 + 41.3, y*noiseScale*2.3 + 7.7);
+      const target = tangle ? n*Math.PI*2.6 : bias + n*1.5;
+      heading += angDiff(target, heading)*turn + (rnd()-.5)*.05;
+      x += Math.cos(heading)*2.2;
+      y += Math.sin(heading)*2.2;
+      if (x<-40||x>W+40||y<-40||y>H+40) break;
+      pts.push({x,y});
+    }
+    if (pts.length < 24) continue;
+    queue.push({
+      pts,
+      o: .04 + rnd()*rnd()*.20,                // mostly ghostly, a few crisper
+      w: rnd() < .9 ? .6 : 1.1,
+    });
   }
-  // big ribbons first feels composed, then details fill in
-  queue.sort((a,b) => b.w - a.w);
 }
 
 function step(){
   if (!queue.length){ drawing = false; return; }
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  // each ribbon is ONE stroke (uniform alpha, no overlap seams);
-  // the piece composes itself a few ribbons per frame
-  const per = reduceMotion ? queue.length : 2;
+  const per = reduceMotion ? queue.length : 60; // strands revealed per frame
   for (let k=0;k<per && queue.length;k++){
-    const rib = queue.shift();
+    const s = queue.shift();
     ctx.beginPath();
-    rib.pts.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
-    ctx.strokeStyle = `rgba(255,255,255,${rib.o})`;
-    ctx.lineWidth = rib.w;
+    s.pts.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+    ctx.strokeStyle = `rgba(255,255,255,${s.o})`;
+    ctx.lineWidth = s.w;
     ctx.stroke();
   }
   if (queue.length) requestAnimationFrame(step);
@@ -232,11 +200,9 @@ function step(){
 function restart(origin){
   reseedNoise();
   noiseScale = 0.0009 * (+document.getElementById("rScale").value);
-  ow = Math.ceil(W/OCC); oh = Math.ceil(H/OCC);
-  occ = new Uint8Array(ow*oh);
   ctx.fillStyle = "#0033ff";
   ctx.fillRect(0,0,W,H);
-  buildRibbons(+document.getElementById("rLines").value, origin);
+  buildStrands(+document.getElementById("rLines").value, origin);
   if (!drawing){ drawing = true; requestAnimationFrame(step); }
 }
 
