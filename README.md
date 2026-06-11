@@ -6,7 +6,7 @@ A collection of interactive creative-coding toys, hosted with GitHub Pages. The 
 
 ## Toys
 
-- **[Shapes](shapes/)**: fill the screen with shapes (circle, square, triangle, diamond, pentagon, hexagon, star, or a mix). Adjust size and amount, switch between solid and outline, and toggle optional float and shake motion. Tap to add or remove individual shapes; save the result as a PNG.
+- **[Fireworks](fireworks/)**: a pixel firework generator on a black sky. Tap to launch a rocket that bursts into thousands of tiny glowing pixels with trails. Adjust burst size, gravity, and trail length, toggle auto-launching and rainbow bursts, and save the result as a PNG.
 - **[Flow](flow/)**: generative flow-field line art. Tap to grow a field from a point, tweak line count, curl, and scale, save the result as a PNG.
 
 ## Adding a new toy
