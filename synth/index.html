@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="description" content="A small modular synth. Patch cables between modules to build generative music.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2310121a'/%3E%3Ccircle cx='20' cy='20' r='6' fill='none' stroke='%23ff5577' stroke-width='3'/%3E%3Ccircle cx='44' cy='44' r='6' fill='none' stroke='%2355ccff' stroke-width='3'/%3E%3Cpath d='M20 26 C20 44 44 28 44 38' stroke='%23ffd24a' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<title>Modular — Playground</title>
+<style>
+  :root{ --ink:#10121a; --panel:#1b1f2c; --line:#2c3242; --white:#fff;
+    --audio:#ffd24a; --cv:#55ccff; --trig:#ff6a9a; }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden}
+  body{background:var(--ink);color:var(--white);font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    user-select:none;-webkit-user-select:none;touch-action:none;display:flex;flex-direction:column;min-height:100dvh}
+  header{display:flex;align-items:baseline;gap:20px;padding:18px clamp(16px,3vw,30px);font-size:14px;font-weight:500;flex:0 0 auto}
+  header a,header button{font:inherit;color:var(--white);background:none;border:none;cursor:pointer;text-decoration:none;
+    padding:2px 0;border-bottom:1px solid transparent;transition:border-color .15s}
+  header a:hover,header button:hover{border-bottom-color:var(--white)}
+  header .title{font-weight:600;margin-right:auto}
+  header .title em{font-style:normal;opacity:.5;font-weight:400;margin-left:10px}
+  header #run.on{color:var(--trig);border-bottom-color:var(--trig)}
+
+  #rack{flex:1 1 auto;overflow-x:auto;overflow-y:hidden;padding:8px clamp(16px,3vw,30px) 26px}
+  #stage{position:relative;display:flex;gap:14px;height:100%;min-height:420px;width:max-content}
+  svg#cables{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;overflow:visible}
+
+  .mod{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:150px;flex:0 0 auto;
+    display:flex;flex-direction:column;padding:12px 10px;gap:10px;box-shadow:0 8px 22px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.05)}
+  .mod h3{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;opacity:.85;text-align:center}
+  .mod .body{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .ctl{display:flex;flex-direction:column;align-items:center;gap:4px}
+  .ctl small{font-size:9px;letter-spacing:.1em;text-transform:uppercase;opacity:.55}
+  .knob{width:46px;height:46px;border-radius:50%;position:relative;cursor:ns-resize;
+    background:radial-gradient(circle at 38% 32%, #4a5168, #20242f 70%);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 3px 6px rgba(0,0,0,.4)}
+  .knob::after{content:"";position:absolute;left:50%;top:4px;width:2.5px;height:15px;border-radius:2px;background:var(--white);
+    transform-origin:50% 19px;transform:translateX(-50%) rotate(var(--a,0deg))}
+  .seq{display:flex;gap:4px}
+  .step{width:13px;height:96px;background:#11141d;border-radius:4px;position:relative;cursor:ns-resize;overflow:hidden;border:1px solid #262b38}
+  .step i{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(var(--cv),#2f7fb0);height:var(--h,40%)}
+  .step.cur{box-shadow:0 0 0 2px var(--trig)}
+  .wave{display:flex;gap:6px}
+  .wave button{font:inherit;font-size:10px;color:var(--white);background:#11141d;border:1px solid #2a3040;border-radius:6px;
+    padding:4px 6px;cursor:pointer;opacity:.55}
+  .wave button.on{opacity:1;border-color:var(--white)}
+  .jacks{display:flex;justify-content:space-around;gap:6px;padding-top:6px;border-top:1px solid var(--line)}
+  .jackwrap{display:flex;flex-direction:column;align-items:center;gap:3px}
+  .jackwrap small{font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;opacity:.6}
+  .jack{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#05070c 0 5px,#1a1f2b 6px);
+    border:3px solid var(--cv);cursor:crosshair;position:relative;z-index:6}
+  .jack[data-kind=audio]{border-color:var(--audio)}
+  .jack[data-kind=cv]{border-color:var(--cv)}
+  .jack[data-kind=clk],.jack[data-kind=gate]{border-color:var(--trig)}
+  .jack.lit{box-shadow:0 0 9px 1px currentColor}
+  .hint{font-size:11px;opacity:.5;padding:0 clamp(16px,3vw,30px) 12px;flex:0 0 auto}
+  @media (max-width:640px){header{gap:14px;padding:14px}}
+</style>
+</head>
+<body>
+<header>
+  <span class="title">Modular<em>patch a synth</em></span>
+  <button id="run" class="on">■ stop</button>
+  <button id="rand">randomize</button>
+  <a href="../">playground</a>
+</header>
+<div id="rack"><div id="stage"><svg id="cables"></svg></div></div>
+<p class="hint">drag from one jack to another to patch · tap a jack to unplug it · drag knobs up/down · drag the bars to write a melody</p>
+
+<script>
+(() => {
+"use strict";
+const $=s=>document.querySelector(s);
+const stage=$("#stage"), svg=$("#cables");
+
+/* ---------------- audio engine ---------------- */
+let actx=null, master=null, nodes={};
+function audio(){
+  if(actx){ if(actx.state==="suspended")actx.resume(); return actx; }
+  actx=new (window.AudioContext||window.webkitAudioContext)();
+  master=actx.createGain(); master.gain.value=0.5; master.connect(actx.destination);
+  // VCO: oscillator -> envelope gain (its audio output)
+  nodes.vcoOsc=actx.createOscillator(); nodes.vcoOsc.type="sawtooth"; nodes.vcoOsc.frequency.value=220;
+  nodes.vcoEnv=actx.createGain(); nodes.vcoEnv.gain.value=0; nodes.vcoOsc.connect(nodes.vcoEnv); nodes.vcoOsc.start();
+  // VCF
+  nodes.vcf=actx.createBiquadFilter(); nodes.vcf.type="lowpass"; nodes.vcf.frequency.value=1200; nodes.vcf.Q.value=6;
+  // OUT
+  nodes.out=actx.createGain(); nodes.out.gain.value=0.6; nodes.out.connect(master);
+  // LFO: osc -> depth gain (a CV source for AudioParams)
+  nodes.lfoOsc=actx.createOscillator(); nodes.lfoOsc.type="sine"; nodes.lfoOsc.frequency.value=2;
+  nodes.lfoDepth=actx.createGain(); nodes.lfoDepth.gain.value=600; nodes.lfoOsc.connect(nodes.lfoDepth); nodes.lfoOsc.start();
+  rebuild();
+  return actx;
+}
+
+/* ---------------- modules & params ---------------- */
+const P={ bpm:128, steps:[.5,.2,.7,.35,.85,.15,.6,.4], wave:"sawtooth", oct:0,
+  cutoff:1200, res:6, lrate:2, ldepth:600, vol:0.6, run:true };
+const SCALE=[0,3,5,7,10]; // minor pentatonic
+const BASE=130.81;        // C3
+function noteFreq(v){
+  const span=SCALE.length*3;                 // 3 octaves of pentatonic
+  const idx=Math.round(v*(span-1));
+  const semis=SCALE[idx%SCALE.length]+12*Math.floor(idx/SCALE.length);
+  return BASE*Math.pow(2,(semis+12*P.oct)/12);
+}
+
+// module → jack definitions (dir + kind). positions filled from DOM.
+const MODS=[
+  {id:"clock",name:"Clock",jacks:[["out","out","clk"]]},
+  {id:"seq",name:"Seq8",jacks:[["clk","in","clk"],["cv","out","cv"],["gate","out","gate"]]},
+  {id:"vco",name:"VCO",jacks:[["cv","in","cv"],["gate","in","gate"],["out","out","audio"]]},
+  {id:"lfo",name:"LFO",jacks:[["out","out","cv"]]},
+  {id:"vcf",name:"VCF",jacks:[["in","in","audio"],["cv","in","cv"],["out","out","audio"]]},
+  {id:"out",name:"Out",jacks:[["in","in","audio"]]},
+];
+let cables=[
+  ["clock.out","seq.clk"],["seq.cv","vco.cv"],["seq.gate","vco.gate"],
+  ["vco.out","vcf.in"],["vcf.out","out.in"],
+];
+const has=(a,b)=>cables.some(c=>c[0]===a&&c[1]===b);
+const connTo=jack=>cables.some(c=>c[1]===jack);
+const connFrom=jack=>cables.some(c=>c[0]===jack);
+
+/* rebuild WebAudio routing from the audio + cv cables */
+function rebuild(){
+  if(!actx)return;
+  try{nodes.vcoEnv.disconnect();}catch(e){} try{nodes.vcf.disconnect();}catch(e){} try{nodes.lfoDepth.disconnect();}catch(e){}
+  // audio path
+  if(has("vco.out","vcf.in")) nodes.vcoEnv.connect(nodes.vcf);
+  if(has("vco.out","out.in")) nodes.vcoEnv.connect(nodes.out);
+  if(has("vcf.out","out.in")) nodes.vcf.connect(nodes.out);
+  if(has("vcf.out","vcf.in")) {} // ignore self
+  // lfo modulation targets (cv cables into AudioParams)
+  if(has("lfo.out","vcf.cv")) nodes.lfoDepth.connect(nodes.vcf.frequency);
+  if(has("lfo.out","out.in")) nodes.lfoDepth.connect(nodes.out.gain);
+}
+
+/* ---------------- sequencer scheduler ---------------- */
+let step=0, nextTime=0, curUI=-1;
+function tick(){
+  if(!actx) return;
+  const stepDur=(60/P.bpm)/2;                 // eighth notes
+  while(P.run && connTo("seq.clk") && nextTime < actx.currentTime+0.12){
+    const t=nextTime, s=step;
+    if(has("seq.cv","vco.cv")) nodes.vcoOsc.frequency.setValueAtTime(noteFreq(P.steps[s]), t);
+    if(has("seq.gate","vco.gate")){
+      const g=nodes.vcoEnv.gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(0.0001,t);
+      g.exponentialRampToValueAtTime(0.7, t+0.006);
+      g.exponentialRampToValueAtTime(0.0001, t+stepDur*0.92);
+    } else if(has("seq.cv","vco.cv")){
+      nodes.vcoEnv.gain.setValueAtTime(0.3,t);  // drone when no gate patched
+    }
+    const delay=(t-actx.currentTime)*1000;
+    setTimeout(()=>highlight(s), Math.max(0,delay));
+    nextTime+=stepDur; step=(step+1)%8;
+  }
+  if(!P.run || !connTo("seq.clk")) nextTime=actx? actx.currentTime:0;
+}
+setInterval(tick,25);
+function highlight(s){ const els=document.querySelectorAll(".step"); if(curUI>=0&&els[curUI])els[curUI].classList.remove("cur"); curUI=s; if(els[s])els[s].classList.add("cur"); }
+
+/* ---------------- build the rack DOM ---------------- */
+function knob(label,get,set,min,max,fmt){
+  const c=document.createElement("div"); c.className="ctl";
+  const k=document.createElement("div"); k.className="knob";
+  const sm=document.createElement("small"); sm.textContent=label;
+  const upd=()=>{ const v=get(); const a=(-135+ (v-min)/(max-min)*270); k.style.setProperty("--a",a+"deg"); };
+  upd();
+  let sy=0,sv=0,drag=false;
+  k.addEventListener("pointerdown",e=>{drag=true;sy=e.clientY;sv=get();k.setPointerCapture(e.pointerId);e.stopPropagation();});
+  k.addEventListener("pointermove",e=>{ if(!drag)return; const v=Math.min(max,Math.max(min, sv+(sy-e.clientY)/150*(max-min))); set(v); upd(); });
+  k.addEventListener("pointerup",()=>drag=false);
+  c.append(k,sm); return c;
+}
+function makeJack(modId,name,dir,kind){
+  const w=document.createElement("div"); w.className="jackwrap";
+  const j=document.createElement("div"); j.className="jack"; j.dataset.kind=kind;
+  j.dataset.id=modId+"."+name; j.dataset.dir=dir;
+  const sm=document.createElement("small"); sm.textContent=name;
+  w.append(j,sm); return w;
+}
+function buildModule(m){
+  const el=document.createElement("div"); el.className="mod"; el.id="m-"+m.id;
+  const h=document.createElement("h3"); h.textContent=m.name; el.appendChild(h);
+  const body=document.createElement("div"); body.className="body"; el.appendChild(body);
+  if(m.id==="clock") body.appendChild(knob("bpm",()=>P.bpm,v=>P.bpm=Math.round(v),60,200));
+  if(m.id==="seq"){
+    const seq=document.createElement("div"); seq.className="seq";
+    P.steps.forEach((v,i)=>{
+      const st=document.createElement("div"); st.className="step";
+      const fill=document.createElement("i"); fill.style.setProperty("--h",(v*100)+"%"); st.appendChild(fill);
+      const setFromY=e=>{ const r=st.getBoundingClientRect(); const val=Math.min(1,Math.max(0,1-(e.clientY-r.top)/r.height)); P.steps[i]=val; fill.style.setProperty("--h",(val*100)+"%"); };
+      let d=false;
+      st.addEventListener("pointerdown",e=>{d=true;setFromY(e);st.setPointerCapture(e.pointerId);e.stopPropagation();});
+      st.addEventListener("pointermove",e=>{if(d)setFromY(e);});
+      st.addEventListener("pointerup",()=>d=false);
+      seq.appendChild(st);
+    });
+    body.appendChild(seq);
+  }
+  if(m.id==="vco"){
+    const w=document.createElement("div"); w.className="wave";
+    ["sine","square","sawtooth","triangle"].forEach(t=>{
+      const b=document.createElement("button"); b.textContent=t.slice(0,3); if(t===P.wave)b.classList.add("on");
+      b.addEventListener("pointerdown",e=>{e.stopPropagation(); P.wave=t; if(nodes.vcoOsc)nodes.vcoOsc.type=t; [...w.children].forEach(c=>c.classList.remove("on")); b.classList.add("on");});
+      w.appendChild(b);
+    });
+    body.append(w, knob("oct",()=>P.oct,v=>P.oct=Math.round(v),-2,2));
+  }
+  if(m.id==="lfo") body.append(knob("rate",()=>P.lrate,v=>{P.lrate=v; if(nodes.lfoOsc)nodes.lfoOsc.frequency.value=v;},0.1,9),
+                               knob("depth",()=>P.ldepth,v=>{P.ldepth=v; if(nodes.lfoDepth)nodes.lfoDepth.gain.value=v;},0,2400));
+  if(m.id==="vcf") body.append(knob("cutoff",()=>P.cutoff,v=>{P.cutoff=v; if(nodes.vcf)nodes.vcf.frequency.value=v;},120,9000),
+                               knob("res",()=>P.res,v=>{P.res=v; if(nodes.vcf)nodes.vcf.Q.value=v;},0,22));
+  if(m.id==="out") body.append(knob("vol",()=>P.vol,v=>{P.vol=v; if(nodes.out)nodes.out.gain.value=v;},0,1));
+  const jr=document.createElement("div"); jr.className="jacks";
+  m.jacks.forEach(([n,dir,kind])=>jr.appendChild(makeJack(m.id,n,dir,kind)));
+  el.appendChild(jr);
+  stage.appendChild(el);
+}
+MODS.forEach(buildModule);
+stage.appendChild(svg); // keep cables on top
+
+/* ---------------- patch cables (drag to connect) ---------------- */
+function jackCenter(id){
+  const j=document.querySelector(`.jack[data-id="${id}"]`); if(!j)return null;
+  const r=j.getBoundingClientRect(), s=stage.getBoundingClientRect();
+  return {x:r.left-s.left+r.width/2, y:r.top-s.top+r.height/2};
+}
+const KCOL={audio:"#ffd24a",cv:"#55ccff",clk:"#ff6a9a",gate:"#ff6a9a"};
+function kindOf(id){ const j=document.querySelector(`.jack[data-id="${id}"]`); return j?j.dataset.kind:"cv"; }
+function path(a,b){ const sag=Math.min(160,40+Math.hypot(b.x-a.x,b.y-a.y)*0.35); const mx=(a.x+b.x)/2,my=(a.y+b.y)/2+sag;
+  return `M${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`; }
+let dragCable=null;
+function drawCables(){
+  svg.innerHTML="";
+  const add=(d,col,w,o)=>{ const p=document.createElementNS("http://www.w3.org/2000/svg","path");
+    p.setAttribute("d",d); p.setAttribute("stroke",col); p.setAttribute("stroke-width",w); p.setAttribute("fill","none");
+    p.setAttribute("stroke-linecap","round"); if(o)p.setAttribute("opacity",o); svg.appendChild(p); };
+  cables.forEach(([from,to])=>{ const a=jackCenter(from),b=jackCenter(to); if(a&&b){ add(path(a,b),"rgba(0,0,0,.4)",6); add(path(a,b),KCOL[kindOf(from)]||"#fff",3.5); } });
+  if(dragCable){ const a=jackCenter(dragCable.from); if(a) add(path(a,dragCable.cur),KCOL[kindOf(dragCable.from)]||"#fff",3.5,0.8); }
+}
+function relayout(){ drawCables(); }
+addEventListener("resize",relayout);
+
+stage.addEventListener("pointerdown",e=>{
+  const j=e.target.closest(".jack"); if(!j)return;
+  audio();
+  const id=j.dataset.id, dir=j.dataset.dir;
+  // tap a patched jack to unplug it
+  if((dir==="in"&&connTo(id))||(dir==="out"&&connFrom(id))){
+    cables=cables.filter(c=>c[0]!==id&&c[1]!==id); rebuild(); drawCables();
+  }
+  if(dir!=="out") return;       // cables start at an output
+  const s=stage.getBoundingClientRect();
+  dragCable={from:id, cur:{x:e.clientX-s.left,y:e.clientY-s.top}};
+  drawCables();
+});
+stage.addEventListener("pointermove",e=>{
+  if(!dragCable)return; const s=stage.getBoundingClientRect();
+  dragCable.cur={x:e.clientX-s.left,y:e.clientY-s.top}; drawCables();
+});
+addEventListener("pointerup",e=>{
+  if(!dragCable)return;
+  const t=document.elementFromPoint(e.clientX,e.clientY);
+  const j=t&&t.closest&&t.closest(".jack");
+  if(j&&j.dataset.dir==="in"){
+    const to=j.dataset.id;
+    cables=cables.filter(c=>c[1]!==to);     // one cable per input
+    if(!has(dragCable.from,to)) cables.push([dragCable.from,to]);
+    rebuild();
+  }
+  dragCable=null; drawCables();
+});
+
+/* ---------------- transport ---------------- */
+$("#run").addEventListener("click",()=>{ audio(); P.run=!P.run; const b=$("#run"); b.classList.toggle("on",P.run); b.textContent=P.run?"■ stop":"▶ play"; });
+$("#rand").addEventListener("click",()=>{ for(let i=0;i<8;i++)P.steps[i]=Math.random(); document.querySelectorAll(".step i").forEach((f,i)=>f.style.setProperty("--h",(P.steps[i]*100)+"%")); });
+
+audio();          // start on load (will resume on first gesture if blocked)
+drawCables();
+setTimeout(drawCables,60);
+})();
+</script>
+</body>
+</html>
