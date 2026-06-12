@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="description" content="Generative Truchet tile patterns. Shuffle, resize, flip tiles and save the art.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23f4efe6'/%3E%3Cg fill='none' stroke='%23e0533b' stroke-width='6'%3E%3Cpath d='M0 32 A32 32 0 0 1 32 0'/%3E%3Cpath d='M64 32 A32 32 0 0 1 32 64'/%3E%3C/g%3E%3C/svg%3E">
+<title>Truchet — Playground</title>
+<style>
+  :root{ --ink:#1a1814; }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden}
+  body{background:#f4efe6;color:var(--ink);font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    user-select:none;-webkit-user-select:none;touch-action:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:pointer}
+  header{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:baseline;gap:24px;
+    padding:22px clamp(20px,4vw,40px);pointer-events:none;font-size:14px;font-weight:500;color:var(--ink);mix-blend-mode:difference}
+  header *{color:#fff}
+  header a,header button{pointer-events:auto;font:inherit;background:none;border:none;cursor:pointer;
+    text-decoration:none;padding:2px 0;border-bottom:1px solid transparent;transition:border-color .15s}
+  header a:hover,header button:hover{border-bottom-color:#fff}
+  header .title{font-weight:600;margin-right:auto;pointer-events:none}
+  header .title em{font-style:normal;opacity:.65;font-weight:400;margin-left:10px}
+  header .spacer{flex:0 0 8px}
+  .panel{position:fixed;left:clamp(20px,4vw,40px);bottom:22px;z-index:10;display:flex;align-items:center;gap:18px;font-size:13px;font-weight:600;color:var(--ink);mix-blend-mode:difference}
+  .panel *{color:#fff}
+  .panel button{font:inherit;background:none;border:none;cursor:pointer;padding:2px 0;border-bottom:1px solid transparent;transition:border-color .15s}
+  .panel button:hover{border-bottom-color:#fff}
+  .panel label{display:flex;align-items:center;gap:10px}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:120px;height:20px;background:transparent;cursor:pointer}
+  input[type=range]::-webkit-slider-runnable-track{height:1px;background:#fff}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;background:#fff;margin-top:-6px}
+  input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#fff;border:none}
+  .hint{position:fixed;right:clamp(20px,4vw,40px);bottom:22px;z-index:10;font-size:12px;color:var(--ink);opacity:.55;max-width:20ch;text-align:right;line-height:1.6}
+  @media (max-width:640px){.hint{display:none}header{gap:16px;padding:16px}}
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<header>
+  <span class="title">Truchet<em>tile patterns</em></span>
+  <button id="shuffle">shuffle</button>
+  <button id="theme">color</button>
+  <button id="save">save png</button>
+  <span class="spacer"></span>
+  <a href="../">playground</a>
+</header>
+<div class="panel">
+  <label>size<input type="range" id="rSize" min="40" max="160" value="80"></label>
+</div>
+<p class="hint">tap a tile to flip it</p>
+<script>
+(() => {
+"use strict";
+const canvas=document.getElementById("stage"), ctx=canvas.getContext("2d");
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+let W,H,tile,cols,rows,grid,DPR=Math.min(devicePixelRatio||1,2);
+
+// palettes: [background, colorA, colorB]
+const THEMES=[
+  ["#f4efe6","#e0533b","#1a1814"],
+  ["#10243a","#5fd0ff","#ffd23b"],
+  ["#1c1726","#ff7ec0","#9af2c0"],
+  ["#f3f3f3","#1a1a1a","#1a1a1a"],
+  ["#0a3d3a","#f4efe6","#ffae5c"],
+];
+let theme=0, t0=0;
+
+function resize(){
+  W=innerWidth; H=innerHeight;
+  canvas.width=W*DPR; canvas.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
+  rebuild();
+}
+addEventListener("resize",resize);
+
+function rebuild(){
+  tile=+document.getElementById("rSize").value;
+  cols=Math.ceil(W/tile)+1; rows=Math.ceil(H/tile)+1;
+  grid=new Uint8Array(cols*rows);
+  for(let i=0;i<grid.length;i++) grid[i]=Math.random()<0.5?0:1;
+  t0=reduce?1e9:performance.now();
+  draw(performance.now());
+}
+
+function drawTile(x,y,o,col,reveal){
+  const s=tile, cx=x+s/2, cy=y+s/2, r=s/2;
+  ctx.save();
+  ctx.translate(cx,cy); ctx.scale(reveal,reveal); ctx.translate(-cx,-cy);
+  ctx.strokeStyle=col; ctx.lineWidth=Math.max(4,s*0.16); ctx.lineCap="round";
+  ctx.beginPath();
+  if(o===0){ ctx.arc(x,   y,   r,0,Math.PI/2); ctx.moveTo(x+s,y+s); ctx.arc(x+s,y+s,r,Math.PI,Math.PI*1.5); }
+  else     { ctx.arc(x+s, y,   r,Math.PI/2,Math.PI); ctx.moveTo(x,y+s); ctx.arc(x,y+s,r,Math.PI*1.5,Math.PI*2); }
+  ctx.stroke();
+  ctx.restore();
+}
+function draw(now){
+  const T=THEMES[theme];
+  ctx.fillStyle=T[0]; ctx.fillRect(0,0,W,H);
+  for(let gy=0;gy<rows;gy++)for(let gx=0;gx<cols;gx++){
+    const i=gy*cols+gx, o=grid[i];
+    // staggered grow-in reveal
+    const age=(now-t0)-((gx+gy)*22);
+    const reveal=reduce?1:Math.max(0,Math.min(1, age/260));
+    if(reveal<=0) continue;
+    const e=1-Math.pow(1-reveal,3);
+    const col=((gx+gy)%2)? T[1] : T[2];
+    drawTile(gx*tile, gy*tile, o, col, e);
+  }
+}
+function loop(){ draw(performance.now()); requestAnimationFrame(loop); }
+
+const $=id=>document.getElementById(id);
+$("rSize").addEventListener("input",rebuild);
+$("shuffle").addEventListener("click",rebuild);
+$("theme").addEventListener("click",()=>{ theme=(theme+1)%THEMES.length; });
+$("save").addEventListener("click",()=>{ const a=document.createElement("a"); a.download="truchet.png"; a.href=canvas.toDataURL("image/png"); a.click(); });
+canvas.addEventListener("pointerdown",e=>{
+  const gx=Math.floor(e.clientX/tile), gy=Math.floor(e.clientY/tile), i=gy*cols+gx;
+  if(i>=0&&i<grid.length){ grid[i]^=1; }
+});
+
+resize();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

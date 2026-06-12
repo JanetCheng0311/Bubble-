@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="description" content="Touch the water and watch ripples spread and interfere across the surface.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23071a2e'/%3E%3Cg fill='none' stroke='%235fc8ff' stroke-width='3'%3E%3Ccircle cx='32' cy='32' r='8'/%3E%3Ccircle cx='32' cy='32' r='18'/%3E%3C/g%3E%3C/svg%3E">
+<title>Ripples — Playground</title>
+<style>
+  :root{ --white:#fff; }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden}
+  body{background:#071a2e;color:var(--white);font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    user-select:none;-webkit-user-select:none;touch-action:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+  header{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:baseline;gap:24px;
+    padding:22px clamp(20px,4vw,40px);pointer-events:none;font-size:14px;font-weight:500}
+  header a,header button{pointer-events:auto;font:inherit;color:var(--white);background:none;border:none;cursor:pointer;
+    text-decoration:none;padding:2px 0;border-bottom:1px solid transparent;transition:border-color .15s}
+  header a:hover,header button:hover{border-bottom-color:var(--white)}
+  header .title{font-weight:600;margin-right:auto;pointer-events:none}
+  header .title em{font-style:normal;opacity:.55;font-weight:400;margin-left:10px}
+  header .spacer{flex:0 0 8px}
+  .panel{position:fixed;left:clamp(20px,4vw,40px);bottom:22px;z-index:10;display:flex;gap:18px;font-size:13px;font-weight:500}
+  .panel button{font:inherit;color:var(--white);background:none;border:none;cursor:pointer;padding:2px 0;opacity:.55;
+    border-bottom:1px solid transparent;transition:opacity .15s,border-color .15s}
+  .panel button:hover{opacity:.85}
+  .panel button.on{opacity:1;border-bottom-color:var(--white)}
+  .hint{position:fixed;right:clamp(20px,4vw,40px);bottom:22px;z-index:10;font-size:12px;opacity:.5;max-width:20ch;text-align:right;line-height:1.6}
+  @media (max-width:640px){.hint{display:none}header{gap:16px;padding:16px}}
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<header>
+  <span class="title">Ripples<em>touch the water</em></span>
+  <button id="rain">rain</button>
+  <button id="theme">color</button>
+  <button id="clear">calm</button>
+  <span class="spacer"></span>
+  <a href="../">playground</a>
+</header>
+<p class="hint">tap or drag across the water</p>
+<script>
+(() => {
+"use strict";
+const canvas=document.getElementById("stage"), ctx=canvas.getContext("2d");
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const CELL=6;
+let W,H,cols,rows,a,b,off,octx,img;
+
+function resize(){
+  W=innerWidth; H=innerHeight;
+  canvas.width=W; canvas.height=H;
+  cols=Math.ceil(W/CELL)+1; rows=Math.ceil(H/CELL)+1;
+  a=new Float32Array(cols*rows); b=new Float32Array(cols*rows);
+  off=document.createElement("canvas"); off.width=cols; off.height=rows; octx=off.getContext("2d");
+  img=octx.createImageData(cols,rows);
+  ctx.imageSmoothingEnabled=true;
+}
+addEventListener("resize",resize);
+
+const THEMES=[
+  {name:"ocean", deep:[8,40,80],   lit:[150,230,255]},
+  {name:"lagoon",deep:[6,70,68],   lit:[150,255,220]},
+  {name:"dusk",  deep:[40,24,70],  lit:[255,180,235]},
+  {name:"ink",   deep:[16,20,28],  lit:[225,235,255]},
+];
+let theme=0;
+
+function drop(px,py,amp){
+  const gx=Math.round(px/CELL), gy=Math.round(py/CELL), R=2;
+  for(let y=-R;y<=R;y++)for(let x=-R;x<=R;x++){
+    const cx=gx+x, cy=gy+y; if(cx<1||cy<1||cx>=cols-1||cy>=rows-1)continue;
+    if(x*x+y*y<=R*R) a[cy*cols+cx]+=amp;
+  }
+}
+function stepSim(){
+  const damp=0.98;
+  for(let y=1;y<rows-1;y++){
+    let i=y*cols+1;
+    for(let x=1;x<cols-1;x++,i++){
+      let v=(a[i-1]+a[i+1]+a[i-cols]+a[i+cols])*0.5 - b[i];
+      b[i]=v*damp;
+    }
+  }
+  const t=a; a=b; b=t;
+}
+function render(){
+  const T=THEMES[theme], d=T.deep, l=T.lit, px=img.data;
+  for(let y=0;y<rows;y++){
+    let i=y*cols;
+    for(let x=0;x<cols;x++,i++){
+      const xl=x>0?a[i-1]:a[i], xr=x<cols-1?a[i+1]:a[i];
+      const yu=y>0?a[i-cols]:a[i], yd=y<rows-1?a[i+cols]:a[i];
+      const slope=(xl-xr)+(yu-yd);
+      let s=slope;                           // surface lighting
+      const spec=Math.max(0,s-2.6)*15;        // bright crest highlights
+      const k=Math.max(0,Math.min(1,0.5+s*0.11));
+      const o=i*4;
+      px[o]  =Math.min(255, d[0]+(l[0]-d[0])*k + spec);
+      px[o+1]=Math.min(255, d[1]+(l[1]-d[1])*k + spec);
+      px[o+2]=Math.min(255, d[2]+(l[2]-d[2])*k + spec);
+      px[o+3]=255;
+    }
+  }
+  octx.putImageData(img,0,0);
+  ctx.drawImage(off,0,0,cols,rows,0,0,W,H);
+}
+
+let rain=false;
+function loop(){
+  stepSim();
+  if(rain && Math.random()<0.05) drop(Math.random()*W, Math.random()*H, 75);
+  render();
+  requestAnimationFrame(loop);
+}
+
+let down=false, lx=0, ly=0;
+canvas.addEventListener("pointerdown",e=>{down=true; lx=e.clientX; ly=e.clientY; drop(e.clientX,e.clientY,160);});
+canvas.addEventListener("pointermove",e=>{ if(!down)return;
+  const dx=e.clientX-lx, dy=e.clientY-ly, steps=Math.max(1,Math.hypot(dx,dy)/CELL);
+  for(let i=1;i<=steps;i++) drop(lx+dx*i/steps, ly+dy*i/steps, 36);
+  lx=e.clientX; ly=e.clientY;
+});
+addEventListener("pointerup",()=>down=false);
+
+document.getElementById("rain").addEventListener("click",e=>{rain=!rain;e.currentTarget.classList.toggle("on",rain);});
+document.getElementById("theme").addEventListener("click",()=>theme=(theme+1)%THEMES.length);
+document.getElementById("clear").addEventListener("click",()=>{a.fill(0);b.fill(0);});
+
+resize();
+// open with a few gentle drops
+for(let i=0;i<5;i++) drop(W*(0.2+Math.random()*0.6),H*(0.2+Math.random()*0.6),90);
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
