@@ -21,12 +21,14 @@
   header .title em{font-style:normal;opacity:.5;font-weight:400;margin-left:10px}
   header #run.on{color:var(--trig);border-bottom-color:var(--trig)}
 
-  #rack{flex:1 1 auto;overflow-x:auto;overflow-y:hidden;padding:8px clamp(16px,3vw,30px) 26px}
-  #stage{position:relative;display:flex;gap:14px;height:100%;min-height:420px;width:max-content}
+  #rack{flex:1 1 auto;overflow:auto;padding:8px clamp(14px,3vw,30px) 26px}
+  #stage{position:relative;display:flex;flex-wrap:wrap;gap:12px;width:100%;align-content:flex-start}
   svg#cables{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;overflow:visible}
 
-  .mod{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:150px;flex:0 0 auto;
+  .mod{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:148px;flex:0 0 auto;align-self:stretch;
     display:flex;flex-direction:column;padding:12px 10px;gap:10px;box-shadow:0 8px 22px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.05)}
+  #m-seq{width:auto;min-width:148px}
+  .mod .jacks{margin-top:auto}
   .mod h3{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;opacity:.85;text-align:center}
   .mod .body{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
   .ctl{display:flex;flex-direction:column;align-items:center;gap:4px}
@@ -35,7 +37,10 @@
     background:radial-gradient(circle at 38% 32%, #4a5168, #20242f 70%);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 3px 6px rgba(0,0,0,.4)}
   .knob::after{content:"";position:absolute;left:50%;top:4px;width:2.5px;height:15px;border-radius:2px;background:var(--white);
     transform-origin:50% 19px;transform:translateX(-50%) rotate(var(--a,0deg))}
-  .seq{display:flex;gap:4px}
+  .seq{display:flex;gap:3px;flex-wrap:nowrap}
+  .stepsel{display:flex;gap:6px;margin-bottom:2px}
+  .stepsel button{font:inherit;font-size:10px;color:var(--white);background:#11141d;border:1px solid #2a3040;border-radius:6px;padding:3px 8px;cursor:pointer;opacity:.55}
+  .stepsel button.on{opacity:1;border-color:var(--white)}
   .step{width:13px;height:96px;background:#11141d;border-radius:4px;position:relative;cursor:ns-resize;overflow:hidden;border:1px solid #262b38}
   .step i{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(var(--cv),#2f7fb0);height:var(--h,40%)}
   .step.cur{box-shadow:0 0 0 2px var(--trig)}
@@ -78,9 +83,15 @@ function audio(){
   if(actx){ if(actx.state==="suspended")actx.resume(); return actx; }
   actx=new (window.AudioContext||window.webkitAudioContext)();
   master=actx.createGain(); master.gain.value=0.5; master.connect(actx.destination);
-  // VCO: oscillator -> envelope gain (its audio output)
+  // VCO: two detuned oscillators -> envelope -> drive (waveshaper) -> level
   nodes.vcoOsc=actx.createOscillator(); nodes.vcoOsc.type="sawtooth"; nodes.vcoOsc.frequency.value=220;
-  nodes.vcoEnv=actx.createGain(); nodes.vcoEnv.gain.value=0; nodes.vcoOsc.connect(nodes.vcoEnv); nodes.vcoOsc.start();
+  nodes.vcoOsc2=actx.createOscillator(); nodes.vcoOsc2.type="sawtooth"; nodes.vcoOsc2.frequency.value=220; nodes.vcoOsc2.detune.value=P.detune;
+  nodes.vcoEnv=actx.createGain(); nodes.vcoEnv.gain.value=0;
+  nodes.shaper=actx.createWaveShaper(); nodes.shaper.curve=makeCurve(P.drive); nodes.shaper.oversample="2x";
+  nodes.vcoLevel=actx.createGain(); nodes.vcoLevel.gain.value=0.45;
+  nodes.vcoOsc.connect(nodes.vcoEnv); nodes.vcoOsc2.connect(nodes.vcoEnv);
+  nodes.vcoEnv.connect(nodes.shaper); nodes.shaper.connect(nodes.vcoLevel);
+  nodes.vcoOsc.start(); nodes.vcoOsc2.start();
   // VCF
   nodes.vcf=actx.createBiquadFilter(); nodes.vcf.type="lowpass"; nodes.vcf.frequency.value=1200; nodes.vcf.Q.value=6;
   // OUT
@@ -93,8 +104,11 @@ function audio(){
 }
 
 /* ---------------- modules & params ---------------- */
-const P={ bpm:128, steps:[.5,.2,.7,.35,.85,.15,.6,.4], wave:"sawtooth", oct:0,
-  cutoff:1200, res:6, lrate:2, ldepth:600, vol:0.6, run:true };
+const P={ bpm:128, steps:[.5,.2,.7,.35,.85,.15,.6,.4,.55,.3,.9,.25,.65,.45,.8,.1],
+  wave:"sawtooth", oct:0, detune:9, drive:8,
+  cutoff:1200, res:8, lrate:2, ldepth:700, vol:0.6, run:true };
+// soft-clip distortion curve for an electric, gritty tone
+function makeCurve(k){ const n=256,c=new Float32Array(n); for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i]=(1+k)*x/(1+k*Math.abs(x)); } return c; }
 const SCALE=[0,3,5,7,10]; // minor pentatonic
 const BASE=130.81;        // C3
 function noteFreq(v){
@@ -124,10 +138,10 @@ const connFrom=jack=>cables.some(c=>c[0]===jack);
 /* rebuild WebAudio routing from the audio + cv cables */
 function rebuild(){
   if(!actx)return;
-  try{nodes.vcoEnv.disconnect();}catch(e){} try{nodes.vcf.disconnect();}catch(e){} try{nodes.lfoDepth.disconnect();}catch(e){}
+  try{nodes.vcoLevel.disconnect();}catch(e){} try{nodes.vcf.disconnect();}catch(e){} try{nodes.lfoDepth.disconnect();}catch(e){}
   // audio path
-  if(has("vco.out","vcf.in")) nodes.vcoEnv.connect(nodes.vcf);
-  if(has("vco.out","out.in")) nodes.vcoEnv.connect(nodes.out);
+  if(has("vco.out","vcf.in")) nodes.vcoLevel.connect(nodes.vcf);
+  if(has("vco.out","out.in")) nodes.vcoLevel.connect(nodes.out);
   if(has("vcf.out","out.in")) nodes.vcf.connect(nodes.out);
   if(has("vcf.out","vcf.in")) {} // ignore self
   // lfo modulation targets (cv cables into AudioParams)
@@ -142,7 +156,7 @@ function tick(){
   const stepDur=(60/P.bpm)/2;                 // eighth notes
   while(P.run && connTo("seq.clk") && nextTime < actx.currentTime+0.12){
     const t=nextTime, s=step;
-    if(has("seq.cv","vco.cv")) nodes.vcoOsc.frequency.setValueAtTime(noteFreq(P.steps[s]), t);
+    if(has("seq.cv","vco.cv")){ const f=noteFreq(P.steps[s]); nodes.vcoOsc.frequency.setValueAtTime(f,t); nodes.vcoOsc2.frequency.setValueAtTime(f,t); }
     if(has("seq.gate","vco.gate")){
       const g=nodes.vcoEnv.gain;
       g.cancelScheduledValues(t);
@@ -154,7 +168,7 @@ function tick(){
     }
     const delay=(t-actx.currentTime)*1000;
     setTimeout(()=>highlight(s), Math.max(0,delay));
-    nextTime+=stepDur; step=(step+1)%8;
+    nextTime+=stepDur; step=(step+1)%P.steps.length;
   }
   if(!P.run || !connTo("seq.clk")) nextTime=actx? actx.currentTime:0;
 }
@@ -187,27 +201,48 @@ function buildModule(m){
   const body=document.createElement("div"); body.className="body"; el.appendChild(body);
   if(m.id==="clock") body.appendChild(knob("bpm",()=>P.bpm,v=>P.bpm=Math.round(v),60,200));
   if(m.id==="seq"){
+    const sel=document.createElement("div"); sel.className="stepsel";
     const seq=document.createElement("div"); seq.className="seq";
-    P.steps.forEach((v,i)=>{
-      const st=document.createElement("div"); st.className="step";
-      const fill=document.createElement("i"); fill.style.setProperty("--h",(v*100)+"%"); st.appendChild(fill);
-      const setFromY=e=>{ const r=st.getBoundingClientRect(); const val=Math.min(1,Math.max(0,1-(e.clientY-r.top)/r.height)); P.steps[i]=val; fill.style.setProperty("--h",(val*100)+"%"); };
-      let d=false;
-      st.addEventListener("pointerdown",e=>{d=true;setFromY(e);st.setPointerCapture(e.pointerId);e.stopPropagation();});
-      st.addEventListener("pointermove",e=>{if(d)setFromY(e);});
-      st.addEventListener("pointerup",()=>d=false);
-      seq.appendChild(st);
+    const renderBars=()=>{
+      seq.innerHTML="";
+      const bw=Math.max(6,Math.min(15,Math.floor(150/P.steps.length)-2));
+      P.steps.forEach((v,i)=>{
+        const st=document.createElement("div"); st.className="step"; st.style.width=bw+"px";
+        const fill=document.createElement("i"); fill.style.setProperty("--h",(v*100)+"%"); st.appendChild(fill);
+        const setFromY=e=>{ const r=st.getBoundingClientRect(); const val=Math.min(1,Math.max(0,1-(e.clientY-r.top)/r.height)); P.steps[i]=val; fill.style.setProperty("--h",(val*100)+"%"); };
+        let d=false;
+        st.addEventListener("pointerdown",e=>{d=true;setFromY(e);st.setPointerCapture(e.pointerId);e.stopPropagation();});
+        st.addEventListener("pointermove",e=>{if(d)setFromY(e);});
+        st.addEventListener("pointerup",()=>d=false);
+        seq.appendChild(st);
+      });
+      setTimeout(drawCables,0);     // bars changed width -> jacks moved
+    };
+    [8,16].forEach(nStep=>{
+      const b=document.createElement("button"); b.textContent=nStep; if(P.steps.length===nStep)b.classList.add("on");
+      b.addEventListener("pointerdown",e=>{e.stopPropagation();
+        const old=P.steps.slice();
+        P.steps=Array.from({length:nStep},(_,i)=> i<old.length?old[i]:Math.random());
+        step=0; [...sel.children].forEach(c=>c.classList.remove("on")); b.classList.add("on"); renderBars();
+      });
+      sel.appendChild(b);
     });
-    body.appendChild(seq);
+    body.append(sel,seq); renderBars();
   }
   if(m.id==="vco"){
     const w=document.createElement("div"); w.className="wave";
     ["sine","square","sawtooth","triangle"].forEach(t=>{
       const b=document.createElement("button"); b.textContent=t.slice(0,3); if(t===P.wave)b.classList.add("on");
-      b.addEventListener("pointerdown",e=>{e.stopPropagation(); P.wave=t; if(nodes.vcoOsc)nodes.vcoOsc.type=t; [...w.children].forEach(c=>c.classList.remove("on")); b.classList.add("on");});
+      b.addEventListener("pointerdown",e=>{e.stopPropagation(); P.wave=t; if(nodes.vcoOsc){nodes.vcoOsc.type=t;nodes.vcoOsc2.type=t;} [...w.children].forEach(c=>c.classList.remove("on")); b.classList.add("on");});
       w.appendChild(b);
     });
-    body.append(w, knob("oct",()=>P.oct,v=>P.oct=Math.round(v),-2,2));
+    const row=document.createElement("div"); row.style.cssText="display:flex;gap:8px;flex-wrap:wrap;justify-content:center";
+    row.append(
+      knob("oct",()=>P.oct,v=>P.oct=Math.round(v),-2,2),
+      knob("detune",()=>P.detune,v=>{P.detune=v; if(nodes.vcoOsc2)nodes.vcoOsc2.detune.value=v;},0,40),
+      knob("drive",()=>P.drive,v=>{P.drive=v; if(nodes.shaper)nodes.shaper.curve=makeCurve(v);},0,30)
+    );
+    body.append(w,row);
   }
   if(m.id==="lfo") body.append(knob("rate",()=>P.lrate,v=>{P.lrate=v; if(nodes.lfoOsc)nodes.lfoOsc.frequency.value=v;},0.1,9),
                                knob("depth",()=>P.ldepth,v=>{P.ldepth=v; if(nodes.lfoDepth)nodes.lfoDepth.gain.value=v;},0,2400));
@@ -276,7 +311,7 @@ addEventListener("pointerup",e=>{
 
 /* ---------------- transport ---------------- */
 $("#run").addEventListener("click",()=>{ audio(); P.run=!P.run; const b=$("#run"); b.classList.toggle("on",P.run); b.textContent=P.run?"■ stop":"▶ play"; });
-$("#rand").addEventListener("click",()=>{ for(let i=0;i<8;i++)P.steps[i]=Math.random(); document.querySelectorAll(".step i").forEach((f,i)=>f.style.setProperty("--h",(P.steps[i]*100)+"%")); });
+$("#rand").addEventListener("click",()=>{ for(let i=0;i<P.steps.length;i++)P.steps[i]=Math.random(); document.querySelectorAll(".step i").forEach((f,i)=>f.style.setProperty("--h",(P.steps[i]*100)+"%")); });
 
 audio();          // start on load (will resume on first gesture if blocked)
 drawCables();
